@@ -4,3 +4,7 @@ apscheduler
 httpx
 supabase
 python-dotenv
+feedparser
+trafilatura
+lxml_html_clean
+anthropic

@@ -4,7 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from db import supabase
-from tasks import fetch_and_store, fetch_single, is_market_open
+from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open
 
 
 class SymbolIn(BaseModel):
@@ -16,8 +16,10 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.add_job(fetch_and_store, "interval", minutes=1)
+    scheduler.add_job(fetch_news, "interval", minutes=5)
     scheduler.start()
     await fetch_and_store()
+    await fetch_news()
     yield
     scheduler.shutdown()
 
