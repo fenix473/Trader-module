@@ -92,3 +92,15 @@ async def get_price(symbol: str):
         .execute()
     )
     return res.data
+
+
+@app.get("/news/latest")
+async def get_latest_news():
+    res = (
+        supabase.table("news_articles")
+        .select("tags, published_at, summary, title, url")
+        .order("published_at", desc=True)
+        .limit(50)
+        .execute()
+    )
+    return res.data
