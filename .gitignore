@@ -1,0 +1,5 @@
+.env
+backend/venv/
+backend/enrichment_changes.csv
+__pycache__/
+*.pyc
