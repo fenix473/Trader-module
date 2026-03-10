@@ -100,4 +100,4 @@ async def get_price(symbol: str):
 
 @app.get("/news/latest")
 async def get_latest_news_route():
-    return get_latest_news()
+    return await get_latest_news()
