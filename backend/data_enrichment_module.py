@@ -19,7 +19,7 @@ async def enrich_pending():
             response = _anthropic.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
-                tools=[{"type": "web_fetch_20260209", "name": "web_fetch"}],
+                tools=[{"type": "web_fetch_20260209", "name": "web_fetch", "allowed_callers": ["direct"]}],
                 messages=[{
                     "role": "user",
                     "content": (
