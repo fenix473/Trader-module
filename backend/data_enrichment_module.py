@@ -17,7 +17,7 @@ async def enrich_pending():
         print(f"Enriching: {article['title'][:60]}")
         try:
             response = _anthropic.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
                 tools=[{"type": "web_fetch_20260209", "name": "web_fetch"}],
                 messages=[{
@@ -64,6 +64,8 @@ async def enrich_pending():
                                 "enrichment_status": "enriched",
                             }).eq("id", article["id"]).execute()
                             print(f"Enriched: {article['title'][:60]}")
+                            print("Cooling down 90s...")
+                            await asyncio.sleep(90)
 
                     except json.JSONDecodeError as e:
                         print(f"JSON parse error for {article['url']}: {e} — marking error")
@@ -76,6 +78,3 @@ async def enrich_pending():
             supabase.table("news_articles").update(
                 {"enrichment_status": "error"}
             ).eq("id", article["id"]).execute()
-
-        print("Cooling down 90s...")
-        await asyncio.sleep(90)
