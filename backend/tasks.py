@@ -2,15 +2,12 @@ import asyncio
 import httpx
 import feedparser
 import trafilatura
-import anthropic
-import json
 from datetime import datetime, time
 from typing import Optional
 from zoneinfo import ZoneInfo
-from config import FINNHUB_API_KEY, ANTHROPIC_API_KEY
+from config import FINNHUB_API_KEY
 from db import supabase
 
-_anthropic = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 _NEWS_RSS = "https://finance.yahoo.com/news/rssindex"
 
 _EASTERN = ZoneInfo("America/New_York")
@@ -124,53 +121,11 @@ async def fetch_news():
         downloaded = trafilatura.fetch_url(url)
         full_text = trafilatura.extract(downloaded) if downloaded else None
 
-        if not full_text:
-            print(f"Could not extract text from {url}, skipping")
-            continue
-
-        # haiku: summary + tags, retry up to 3 times
-        summary = ""
-        tags = []
-        for attempt in range(3):
-            try:
-                response = _anthropic.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=512,
-                    messages=[{
-                        "role": "user",
-                        "content": (
-                            f"Article title: {title}\n\n"
-                            f"Article text:\n{full_text[:4000]}\n\n"
-                            "Return a JSON object with two keys:\n"
-                            "- \"summary\": 2-3 sentence summary of the article\n"
-                            "- \"tags\": list of stock ticker symbols mentioned (e.g. [\"AAPL\", \"MSFT\"])\n"
-                            "Return only the JSON, no explanation."
-                        )
-                    }]
-                )
-                block = response.content[0]
-                text = block.text if isinstance(block, anthropic.types.TextBlock) else "{}"
-                text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-                result = json.loads(text)
-                summary = result.get("summary", "").strip()
-                tags = result.get("tags", [])
-                if summary and tags:
-                    break
-                print(f"Haiku attempt {attempt + 1}: missing {'summary' if not summary else 'tags'} for {url}")
-            except Exception as e:
-                print(f"Haiku attempt {attempt + 1} error for {url}: {e}")
-
-        if not summary or not tags:
-            print(f"Haiku failed after 3 attempts for {url}, storing ERROR")
-            summary = "ERROR"
-            tags = []
-
         supabase.table("news_articles").insert({
             "url": url,
             "title": title,
             "published_at": published_at,
             "full_text": full_text,
-            "summary": summary,
-            "tags": tags,
+            "enrichment_status": "pending",
         }).execute()
-        print(f"Stored article: {title[:60]}")
+        print(f"Queued article: {title[:60]}")

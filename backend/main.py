@@ -1,10 +1,12 @@
+import asyncio
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from db import supabase
+from db import supabase, get_latest_news
 from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open
+from data_enrichment_module import enrich_pending
 
 
 class SymbolIn(BaseModel):
@@ -17,9 +19,11 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     scheduler.add_job(fetch_and_store, "interval", minutes=1)
     scheduler.add_job(fetch_news, "interval", minutes=5)
+    scheduler.add_job(enrich_pending, "interval", minutes=10, max_instances=1)
     scheduler.start()
     await fetch_and_store()
     await fetch_news()
+    asyncio.create_task(enrich_pending())  # start enrichment backlog immediately
     yield
     scheduler.shutdown()
 
@@ -95,12 +99,5 @@ async def get_price(symbol: str):
 
 
 @app.get("/news/latest")
-async def get_latest_news():
-    res = (
-        supabase.table("news_articles")
-        .select("tags, published_at, summary, title, url")
-        .order("published_at", desc=True)
-        .limit(50)
-        .execute()
-    )
-    return res.data
+async def get_latest_news_route():
+    return get_latest_news()
