@@ -86,15 +86,23 @@ async def get_latest_prices():
 
 
 @app.get("/prices/{symbol}")
-async def get_price(symbol: str, limit: int = 10, offset: int = 0):
-    res = (
+async def get_price(symbol: str, limit: int = 10, offset: int = 0, date: str = None):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    query = (
         supabase.table("prices")
         .select("*")
         .eq("symbol", symbol.upper())
         .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
     )
+    if date:
+        et = ZoneInfo("America/New_York")
+        start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=et)
+        end = start + timedelta(days=1)
+        query = query.gte("created_at", start.isoformat()).lt("created_at", end.isoformat()).limit(500)
+    else:
+        query = query.range(offset, offset + limit - 1)
+    res = query.execute()
     return res.data
 
 
