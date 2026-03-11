@@ -86,13 +86,13 @@ async def get_latest_prices():
 
 
 @app.get("/prices/{symbol}")
-async def get_price(symbol: str):
+async def get_price(symbol: str, limit: int = 10, offset: int = 0):
     res = (
         supabase.table("prices")
         .select("*")
         .eq("symbol", symbol.upper())
         .order("created_at", desc=True)
-        .limit(50)
+        .range(offset, offset + limit - 1)
         .execute()
     )
     return res.data
@@ -101,3 +101,5 @@ async def get_price(symbol: str):
 @app.get("/news/latest")
 async def get_latest_news_route():
     return await get_latest_news()
+
+# Hello
