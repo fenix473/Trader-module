@@ -19,7 +19,7 @@ async def get_latest_news(limit=None):
 def get_next_pending_article():
     res = (
         supabase.table("news_articles")
-        .select("id, url, title, published_at")
+        .select("id, url, title, published_at, full_text")
         .eq("enrichment_status", "pending")
         .order("published_at", desc=True)  # DESC — newest first (LIFO)
         .limit(1)
