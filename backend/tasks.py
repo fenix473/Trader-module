@@ -133,26 +133,19 @@ async def fetch_news():
 
 
 async def fetch_daily_closes(symbol: str, days: int) -> list[tuple[date, float]]:
-    to_ts = int(_time.time())
-    from_ts = int((datetime.now() - timedelta(days=days)).timestamp())
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.get(
-                f"https://finnhub.io/api/v1/stock/candle"
-                f"?symbol={symbol}&resolution=D&from={from_ts}&to={to_ts}&token={FINNHUB_API_KEY}",
-                timeout=15.0
-            )
-            if res.status_code != 200:
-                print(f"fetch_daily_closes {symbol}: HTTP {res.status_code}")
-                return []
-            data = res.json()
-            if data.get("s") != "ok":
-                print(f"fetch_daily_closes {symbol}: status={data.get('s')}")
-                return []
-            return [(date.fromtimestamp(t), c) for t, c in zip(data["t"], data["c"])]
-        except Exception as e:
-            print(f"fetch_daily_closes {symbol}: {e}")
+    import yfinance as yf
+    try:
+        start = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        end = datetime.now().strftime('%Y-%m-%d')
+        ticker = yf.Ticker(symbol)
+        hist = await asyncio.to_thread(ticker.history, start=start, end=end, interval='1d', auto_adjust=True)
+        if hist.empty:
+            print(f"fetch_daily_closes {symbol}: no data from yfinance")
             return []
+        return [(d.date(), float(c)) for d, c in zip(hist.index, hist['Close'])]
+    except Exception as e:
+        print(f"fetch_daily_closes {symbol}: {e}")
+        return []
 
 
 async def compute_ma_crossover_for_symbol(symbol: str):
