@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 import httpx
 import feedparser
 import trafilatura
@@ -6,8 +7,9 @@ from datetime import datetime, time, date, timedelta
 from typing import Optional
 import time as _time
 from zoneinfo import ZoneInfo
-from config import FINNHUB_API_KEY
-from db import supabase
+from config import FINNHUB_API_KEY, MA_CROSSOVER_LOOKBACK_DAYS
+from db import supabase, upsert_ma_crossover
+from signals.ma_crossover import compute as compute_ma_crossover
 
 _NEWS_RSS = "https://finance.yahoo.com/news/rssindex"
 
@@ -149,17 +151,16 @@ async def fetch_daily_closes(symbol: str, days: int) -> list[tuple[date, float]]
 
 
 async def compute_ma_crossover_for_symbol(symbol: str):
-    from config import MA_CROSSOVER_LOOKBACK_DAYS
-    from signals.ma_crossover import compute
-    from db import upsert_ma_crossover
-
-    prices = await fetch_daily_closes(symbol, MA_CROSSOVER_LOOKBACK_DAYS)
-    if len(prices) < 200:
-        print(f"MA crossover: insufficient data for {symbol} ({len(prices)} closes), skipping")
-        return
-    signal = compute(prices)
-    upsert_ma_crossover(symbol, signal)
-    print(f"MA crossover [{symbol}]: {signal['trend_strength']}, spread={signal['ma_spread_pct']:.2f}%")
+    try:
+        prices = await fetch_daily_closes(symbol, MA_CROSSOVER_LOOKBACK_DAYS)
+        if len(prices) < 200:
+            print(f"MA crossover: insufficient data for {symbol} ({len(prices)} closes), skipping")
+            return
+        signal = compute_ma_crossover(prices)
+        upsert_ma_crossover(symbol, signal)
+        print(f"MA crossover [{symbol}]: {signal['trend_strength']}, spread={signal['ma_spread_pct']:.2f}%")
+    except Exception:
+        print(f"MA crossover ERROR [{symbol}]:\n{traceback.format_exc()}")
 
 
 async def compute_ma_crossover_all():
