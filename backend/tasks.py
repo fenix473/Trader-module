@@ -7,9 +7,10 @@ from datetime import datetime, time, date, timedelta
 from typing import Optional
 import time as _time
 from zoneinfo import ZoneInfo
-from config import FINNHUB_API_KEY, MA_CROSSOVER_LOOKBACK_DAYS
-from db import supabase, upsert_ma_crossover
+from config import FINNHUB_API_KEY, MA_CROSSOVER_LOOKBACK_DAYS, RSI_DIVERGENCE_LOOKBACK_DAYS
+from db import supabase, upsert_ma_crossover, upsert_rsi_divergence
 from signals.ma_crossover import compute as compute_ma_crossover
+from signals.rsi_divergence import compute_rsi_divergence, InsufficientDataError
 
 _NEWS_RSS = "https://finance.yahoo.com/news/rssindex"
 
@@ -134,17 +135,25 @@ async def fetch_news():
         print(f"Queued article: {title[:60]}")
 
 
-async def fetch_daily_closes(symbol: str, days: int) -> list[tuple[date, float]]:
+async def fetch_daily_closes(symbol: str, market_days: int) -> list[tuple[date, float]]:
+    """Fetch exactly `market_days` trading-day closes.
+
+    Uses pd.bdate_range to count back business days (handles weekends precisely),
+    with a small +15 buffer for market holidays. Final iloc[-market_days:] trim
+    gives the exact count regardless of how many holidays fell in the window.
+    """
     import yfinance as yf
+    import pandas as pd
     try:
-        start = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        start = pd.bdate_range(end=datetime.now(), periods=market_days + 15)[0].strftime('%Y-%m-%d')
         end = datetime.now().strftime('%Y-%m-%d')
         ticker = yf.Ticker(symbol)
         hist = await asyncio.to_thread(ticker.history, start=start, end=end, interval='1d', auto_adjust=True)
         if hist.empty:
             print(f"fetch_daily_closes {symbol}: no data from yfinance")
             return []
-        return [(d.date(), float(c)) for d, c in zip(hist.index, hist['Close'])]
+        rows = [(d.date(), float(c)) for d, c in zip(hist.index, hist['Close'])]
+        return rows[-market_days:]
     except Exception as e:
         print(f"fetch_daily_closes {symbol}: {e}")
         return []
@@ -167,3 +176,72 @@ async def compute_ma_crossover_all():
     symbols_res = supabase.table("symbols").select("symbol").execute()
     for row in symbols_res.data:
         await compute_ma_crossover_for_symbol(row["symbol"])
+
+
+def _compute_rsi(closes: list, period: int = 14) -> list:
+    """Wilder's RSI via pandas EWM. First bar is NaN (returned as None)."""
+    import math
+    import pandas as pd
+    s = pd.Series(closes)
+    delta = s.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return [None if math.isnan(v) else float(v) for v in rsi]
+
+
+async def fetch_daily_ohlc(symbol: str, market_days: int) -> dict:
+    """Fetch exactly `market_days` trading-day OHLC bars. Returns dict of aligned float lists."""
+    import yfinance as yf
+    import pandas as pd
+    try:
+        start = pd.bdate_range(end=datetime.now(), periods=market_days + 15)[0].strftime('%Y-%m-%d')
+        end = datetime.now().strftime('%Y-%m-%d')
+        ticker = yf.Ticker(symbol)
+        hist = await asyncio.to_thread(
+            ticker.history, start=start, end=end, interval='1d', auto_adjust=True
+        )
+        if hist.empty:
+            print(f"fetch_daily_ohlc {symbol}: no data from yfinance")
+            return {"closes": [], "highs": [], "lows": [], "dates": []}
+        hist = hist.iloc[-market_days:]
+        return {
+            "closes": [float(c) for c in hist["Close"]],
+            "highs":  [float(h) for h in hist["High"]],
+            "lows":   [float(l) for l in hist["Low"]],
+            "dates":  [d.date() for d in hist.index],
+        }
+    except Exception as e:
+        print(f"fetch_daily_ohlc {symbol}: {e}")
+        return {"closes": [], "highs": [], "lows": [], "dates": []}
+
+
+async def compute_rsi_divergence_for_symbol(symbol: str, timeframe: str = "1d"):
+    try:
+        ohlc = await fetch_daily_ohlc(symbol, RSI_DIVERGENCE_LOOKBACK_DAYS)
+        closes = ohlc["closes"]
+        highs  = ohlc["highs"]
+        lows   = ohlc["lows"]
+        if len(closes) < 60:
+            print(f"RSI divergence: insufficient data for {symbol} ({len(closes)} bars), skipping")
+            return
+        rsi_series = _compute_rsi(closes)
+        result = compute_rsi_divergence(closes, highs, lows, rsi_series)
+        upsert_rsi_divergence(symbol, timeframe, result)
+        print(
+            f"RSI divergence [{symbol}/{timeframe}]: "
+            f"{result['divergence_type']}, confidence={result['confidence']}"
+        )
+    except InsufficientDataError as e:
+        print(f"RSI divergence [{symbol}]: {e}")
+    except Exception:
+        print(f"RSI divergence ERROR [{symbol}]:\n{traceback.format_exc()}")
+
+
+async def compute_rsi_divergence_all():
+    symbols_res = supabase.table("symbols").select("symbol").execute()
+    for row in symbols_res.data:
+        await compute_rsi_divergence_for_symbol(row["symbol"])

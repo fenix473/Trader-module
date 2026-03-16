@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from db import supabase, get_latest_news, get_ma_crossover, get_all_ma_crossovers
-from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open, compute_ma_crossover_for_symbol, compute_ma_crossover_all
+from db import supabase, get_latest_news, get_ma_crossover, get_all_ma_crossovers, get_rsi_divergence
+from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open, compute_ma_crossover_for_symbol, compute_ma_crossover_all, compute_rsi_divergence_for_symbol, compute_rsi_divergence_all
 from data_enrichment_module import enrich_pending
 
 
@@ -21,6 +21,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(fetch_news, "interval", minutes=5)
     scheduler.add_job(enrich_pending, "interval", minutes=10, max_instances=1)
     scheduler.add_job(compute_ma_crossover_all, "cron", hour=18, minute=0, timezone="America/New_York")
+    scheduler.add_job(compute_rsi_divergence_all, "cron", hour=18, minute=5, timezone="America/New_York")
     scheduler.start()
     await fetch_and_store()
     await fetch_news()
@@ -132,3 +133,25 @@ async def get_ma_crossover_signal(symbol: str):
 async def refresh_ma_crossover(symbol: str, background_tasks: BackgroundTasks):
     background_tasks.add_task(compute_ma_crossover_for_symbol, symbol.upper())
     return {"status": "accepted", "symbol": symbol.upper()}
+
+
+class RsiDivergenceTriggerIn(BaseModel):
+    symbol: str
+    timeframe: str = "1d"
+
+
+@app.get("/signals/rsi-divergence")
+async def get_rsi_divergence_signal(symbol: str, timeframe: str = "1d", limit: int = 30):
+    rows = get_rsi_divergence(symbol.upper(), timeframe, limit)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No RSI divergence signal for {symbol.upper()}. Trigger a manual run or wait for the nightly task.",
+        )
+    return rows
+
+
+@app.post("/signals/rsi-divergence/trigger", status_code=202)
+async def trigger_rsi_divergence(body: RsiDivergenceTriggerIn, background_tasks: BackgroundTasks):
+    background_tasks.add_task(compute_rsi_divergence_for_symbol, body.symbol.upper(), body.timeframe)
+    return {"status": "queued", "symbol": body.symbol.upper(), "timeframe": body.timeframe}

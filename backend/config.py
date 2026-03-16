@@ -10,5 +10,6 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 SYMBOLS = ["AAPL", "GOOGL", "MSFT", "TSLA"]
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-MA_CROSSOVER_LOOKBACK_DAYS = 300
+MA_CROSSOVER_LOOKBACK_DAYS = 220       # market days (need ≥200 for SMA-200)
+RSI_DIVERGENCE_LOOKBACK_DAYS = 95      # market days (need ≥90 for divergence lookback)
 
