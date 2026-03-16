@@ -80,7 +80,7 @@ def upsert_rsi_divergence(symbol: str, timeframe: str, result: dict) -> None:
         "timeframe": timeframe,
         "computed_at": now.isoformat(),
         "divergence_type": result["divergence_type"],
-        "confidence": result.get("confidence"),
+        "confidence": result.get("confidence") or "none",
         "bars_ago": result.get("bars_ago"),
         "rsi_period": result["rsi_period"],
         "price_pivot_value": result.get("price_pivot_value"),

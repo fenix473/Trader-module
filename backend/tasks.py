@@ -146,7 +146,7 @@ async def fetch_daily_closes(symbol: str, market_days: int) -> list[tuple[date, 
     import pandas as pd
     try:
         start = pd.bdate_range(end=datetime.now(), periods=market_days + 15)[0].strftime('%Y-%m-%d')
-        end = datetime.now().strftime('%Y-%m-%d')
+        end = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')  # exclusive in yfinance
         ticker = yf.Ticker(symbol)
         hist = await asyncio.to_thread(ticker.history, start=start, end=end, interval='1d', auto_adjust=True)
         if hist.empty:
@@ -199,7 +199,7 @@ async def fetch_daily_ohlc(symbol: str, market_days: int) -> dict:
     import pandas as pd
     try:
         start = pd.bdate_range(end=datetime.now(), periods=market_days + 15)[0].strftime('%Y-%m-%d')
-        end = datetime.now().strftime('%Y-%m-%d')
+        end = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')  # exclusive in yfinance
         ticker = yf.Ticker(symbol)
         hist = await asyncio.to_thread(
             ticker.history, start=start, end=end, interval='1d', auto_adjust=True
