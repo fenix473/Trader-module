@@ -2,8 +2,9 @@ import asyncio
 import httpx
 import feedparser
 import trafilatura
-from datetime import datetime, time
+from datetime import datetime, time, date, timedelta
 from typing import Optional
+import time as _time
 from zoneinfo import ZoneInfo
 from config import FINNHUB_API_KEY
 from db import supabase
@@ -129,3 +130,46 @@ async def fetch_news():
             "enrichment_status": "pending",
         }).execute()
         print(f"Queued article: {title[:60]}")
+
+
+async def fetch_daily_closes(symbol: str, days: int) -> list[tuple[date, float]]:
+    to_ts = int(_time.time())
+    from_ts = int((datetime.now() - timedelta(days=days)).timestamp())
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.get(
+                f"https://finnhub.io/api/v1/stock/candle"
+                f"?symbol={symbol}&resolution=D&from={from_ts}&to={to_ts}&token={FINNHUB_API_KEY}",
+                timeout=15.0
+            )
+            if res.status_code != 200:
+                print(f"fetch_daily_closes {symbol}: HTTP {res.status_code}")
+                return []
+            data = res.json()
+            if data.get("s") != "ok":
+                print(f"fetch_daily_closes {symbol}: status={data.get('s')}")
+                return []
+            return [(date.fromtimestamp(t), c) for t, c in zip(data["t"], data["c"])]
+        except Exception as e:
+            print(f"fetch_daily_closes {symbol}: {e}")
+            return []
+
+
+async def compute_ma_crossover_for_symbol(symbol: str):
+    from config import MA_CROSSOVER_LOOKBACK_DAYS
+    from signals.ma_crossover import compute
+    from db import upsert_ma_crossover
+
+    prices = await fetch_daily_closes(symbol, MA_CROSSOVER_LOOKBACK_DAYS)
+    if len(prices) < 200:
+        print(f"MA crossover: insufficient data for {symbol} ({len(prices)} closes), skipping")
+        return
+    signal = compute(prices)
+    upsert_ma_crossover(symbol, signal)
+    print(f"MA crossover [{symbol}]: {signal['trend_strength']}, spread={signal['ma_spread_pct']:.2f}%")
+
+
+async def compute_ma_crossover_all():
+    symbols_res = supabase.table("symbols").select("symbol").execute()
+    for row in symbols_res.data:
+        await compute_ma_crossover_for_symbol(row["symbol"])

@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from db import supabase, get_latest_news
-from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open
+from db import supabase, get_latest_news, get_ma_crossover, get_all_ma_crossovers
+from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open, compute_ma_crossover_for_symbol, compute_ma_crossover_all
 from data_enrichment_module import enrich_pending
 
 
@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(fetch_and_store, "interval", minutes=1)
     scheduler.add_job(fetch_news, "interval", minutes=5)
     scheduler.add_job(enrich_pending, "interval", minutes=10, max_instances=1)
+    scheduler.add_job(compute_ma_crossover_all, "cron", hour=18, minute=0, timezone="America/New_York")
     scheduler.start()
     await fetch_and_store()
     await fetch_news()
@@ -110,4 +111,24 @@ async def get_price(symbol: str, limit: int = 10, offset: int = 0, date: str = N
 async def get_latest_news_route():
     return await get_latest_news()
 
-# Hello
+
+@app.get("/signals/ma-crossover")
+async def get_all_ma_crossover_signals():
+    return get_all_ma_crossovers()
+
+
+@app.get("/signals/ma-crossover/{symbol}")
+async def get_ma_crossover_signal(symbol: str):
+    row = get_ma_crossover(symbol.upper())
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No signal computed for {symbol.upper()}. Trigger a manual run or wait for the nightly task.",
+        )
+    return row
+
+
+@app.post("/signals/ma-crossover/{symbol}/refresh", status_code=202)
+async def refresh_ma_crossover(symbol: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(compute_ma_crossover_for_symbol, symbol.upper())
+    return {"status": "accepted", "symbol": symbol.upper()}

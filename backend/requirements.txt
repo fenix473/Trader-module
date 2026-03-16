@@ -8,3 +8,5 @@ feedparser
 trafilatura
 lxml_html_clean
 openai
+pandas
+numpy
