@@ -5,9 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+import httpx
 from db import supabase, get_latest_news, get_ma_crossover, get_all_ma_crossovers, get_rsi_divergence
 from tasks import fetch_and_store, fetch_single, fetch_news, is_market_open, compute_ma_crossover_for_symbol, compute_ma_crossover_all, compute_rsi_divergence_for_symbol, compute_rsi_divergence_all
 from data_enrichment_module import enrich_pending
+from config import N8N_WEBHOOK_URL
 
 
 class SymbolIn(BaseModel):
@@ -147,6 +149,11 @@ async def request_analysis(body: AnalysisRequestIn):
     if not existing.data:
         raise HTTPException(status_code=404, detail=f"{symbol} not tracked")
     supabase.table("symbols").update({"should_analyze": True}).eq("symbol", symbol).execute()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(N8N_WEBHOOK_URL, json={"symbol": symbol})
+    except Exception as e:
+        print(f"N8N webhook call failed for {symbol}: {e}")
     return {"status": "queued", "symbol": symbol}
 
 

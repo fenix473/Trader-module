@@ -13,3 +13,8 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MA_CROSSOVER_LOOKBACK_DAYS = 220       # market days (need ≥200 for SMA-200)
 RSI_DIVERGENCE_LOOKBACK_DAYS = 95      # market days (need ≥90 for divergence lookback)
 
+N8N_WEBHOOK_URL = os.getenv(
+    "N8N_WEBHOOK_URL",
+    "https://fenix473.app.n8n.cloud/webhook/ba0d1190-ed2b-4f6a-829c-141cec7b7f74",
+)
+
