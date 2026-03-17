@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -135,6 +136,20 @@ async def refresh_ma_crossover(symbol: str, background_tasks: BackgroundTasks):
     return {"status": "accepted", "symbol": symbol.upper()}
 
 
+class AnalysisRequestIn(BaseModel):
+    symbol: str
+
+
+@app.post("/analysis/request", status_code=202)
+async def request_analysis(body: AnalysisRequestIn):
+    symbol = body.symbol.upper().strip()
+    existing = supabase.table("symbols").select("id").eq("symbol", symbol).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"{symbol} not tracked")
+    supabase.table("symbols").update({"should_analyze": True}).eq("symbol", symbol).execute()
+    return {"status": "queued", "symbol": symbol}
+
+
 class RsiDivergenceTriggerIn(BaseModel):
     symbol: str
     timeframe: str = "1d"
@@ -155,3 +170,54 @@ async def get_rsi_divergence_signal(symbol: str, timeframe: str = "1d", limit: i
 async def trigger_rsi_divergence(body: RsiDivergenceTriggerIn, background_tasks: BackgroundTasks):
     background_tasks.add_task(compute_rsi_divergence_for_symbol, body.symbol.upper(), body.timeframe)
     return {"status": "queued", "symbol": body.symbol.upper(), "timeframe": body.timeframe}
+
+@app.get("/analysis/latest")
+async def get_latest_analysis():
+    res = supabase.table("analysis_reports").select("*").order("generated_at", desc=True).limit(200).execute()
+    rows: list = res.data or []
+    seen: dict = {}
+    for row in rows:
+        if row["symbol"] not in seen:
+            seen[row["symbol"]] = row
+    return list(seen.values())
+
+
+@app.get("/analysis/latest/{symbol}")
+async def get_latest_analysis_symbol(symbol: str):
+    res = (
+        supabase.table("analysis_reports")
+        .select("*")
+        .eq("symbol", symbol.upper())
+        .order("generated_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=404, detail=f"No analysis for {symbol.upper()}")
+    return res.data[0]
+
+
+@app.get("/analysis/reports")
+async def get_analysis_reports(limit: int = 10, offset: int = 0, symbol: Optional[str] = None):
+    query = (
+        supabase.table("analysis_reports")
+        .select("*")
+        .order("generated_at", desc=True)
+    )
+    if symbol:
+        query = query.eq("symbol", symbol.upper())
+    res = query.range(offset, offset + limit - 1).execute()
+    return res.data or []
+
+
+@app.get("/analysis/history/{symbol}")
+async def get_analysis_history(symbol: str, limit: int = 30):
+    res = (
+        supabase.table("analysis_reports")
+        .select("*")
+        .eq("symbol", symbol.upper())
+        .order("generated_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return res.data
