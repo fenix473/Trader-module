@@ -202,6 +202,15 @@ async def get_latest_analysis():
     return list(seen.values())
 
 
+@app.get("/analysis/status/{symbol}")
+async def get_analysis_status(symbol: str):
+    res = supabase.table("symbols").select("should_analyze").eq("symbol", symbol.upper()).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail=f"{symbol.upper()} not tracked")
+    row: dict = res.data[0]  # type: ignore[assignment]
+    return {"pending": bool(row.get("should_analyze", False))}
+
+
 @app.get("/analysis/latest/{symbol}")
 async def get_latest_analysis_symbol(symbol: str):
     res = (
