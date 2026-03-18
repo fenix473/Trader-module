@@ -142,6 +142,13 @@ class AnalysisRequestIn(BaseModel):
     symbol: str
 
 
+@app.post("/analysis/complete/{symbol}", status_code=200)
+async def complete_analysis(symbol: str):
+    symbol = symbol.upper().strip()
+    supabase.table("symbols").update({"should_analyze": False}).eq("symbol", symbol).execute()
+    return {"status": "done", "symbol": symbol}
+
+
 @app.post("/analysis/request", status_code=202)
 async def request_analysis(body: AnalysisRequestIn):
     symbol = body.symbol.upper().strip()
@@ -149,12 +156,18 @@ async def request_analysis(body: AnalysisRequestIn):
     if not existing.data:
         raise HTTPException(status_code=404, detail=f"{symbol} not tracked")
     supabase.table("symbols").update({"should_analyze": True}).eq("symbol", symbol).execute()
+    n8n_message = "Workflow was started"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(N8N_WEBHOOK_URL, json={"symbol": symbol})
+            r = await client.post(N8N_WEBHOOK_URL, json={"symbol": symbol})
+            if r.status_code == 200:
+                n8n_message = r.json().get("message", n8n_message)
+                print(f"N8N webhook accepted for {symbol}: {n8n_message}")
+            else:
+                print(f"N8N webhook returned {r.status_code} for {symbol}: {r.text}")
     except Exception as e:
         print(f"N8N webhook call failed for {symbol}: {e}")
-    return {"status": "queued", "symbol": symbol}
+    return {"status": "queued", "symbol": symbol, "message": n8n_message}
 
 
 class RsiDivergenceTriggerIn(BaseModel):
