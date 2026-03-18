@@ -167,6 +167,8 @@ async def request_analysis(body: AnalysisRequestIn):
                 print(f"N8N webhook returned {r.status_code} for {symbol}: {r.text}")
     except Exception as e:
         print(f"N8N webhook call failed for {symbol}: {e}")
+    finally:
+        supabase.table("symbols").update({"should_analyze": False}).eq("symbol", symbol).execute()
     return {"status": "queued", "symbol": symbol, "message": n8n_message}
 
 
