@@ -2,4 +2,6 @@
 backend/venv/
 backend/enrichment_changes.csv
 __pycache__/
-*.pyctrader-module/
+*.pyc
+trader-module/
+local_debug/
