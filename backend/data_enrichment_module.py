@@ -11,8 +11,6 @@ _client = OpenAI(
 
 FREE_MODELS = [
     "openrouter/hunter-alpha",
-    "openrouter/healer-alpha",
-    "nvidia/nemotron-3-super-120b-a12b:free",
 ]
 
 SLEEP_BETWEEN_ARTICLES = 10  # seconds — stay under 8 req/min rate limit
