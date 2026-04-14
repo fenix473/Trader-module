@@ -10,7 +10,7 @@ _client = OpenAI(
 )
 
 FREE_MODELS = [
-    "openrouter/hunter-alpha",
+    "google/gemma-4-31b-it:free",
 ]
 
 SLEEP_BETWEEN_ARTICLES = 10  # seconds — stay under 8 req/min rate limit
