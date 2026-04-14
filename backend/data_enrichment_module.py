@@ -10,6 +10,7 @@ _client = OpenAI(
 )
 
 FREE_MODELS = [
+    "openrouter/elephant-alpha",
     "google/gemma-4-31b-it:free",
 ]
 
